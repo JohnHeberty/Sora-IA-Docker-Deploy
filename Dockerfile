@@ -25,6 +25,27 @@ RUN pip install --no-cache-dir \
     "torchvision==0.16.2+cu121" \
     --index-url https://download.pytorch.org/whl/cu121
 
+# 2.5 Patch no torchvision.write_video para não quebrar com PyAV
+RUN python - << 'PY'
+import pathlib
+
+video_py = pathlib.Path("/usr/local/lib/python3.10/dist-packages/torchvision/io/video.py")
+text = video_py.read_text()
+
+old = '        frame.pict_type = "NONE"\\n'
+new = (
+    '        # patched: compat PyAV (pict_type string removida)\\n'
+    '        # frame.pict_type = "NONE"\\n'
+)
+
+if old in text:
+    text = text.replace(old, new)
+    video_py.write_text(text)
+    print("✅ Patched torchvision.io.video.write_video (removido frame.pict_type).")
+else:
+    print("⚠️ Linha frame.pict_type = \"NONE\" não encontrada; nada foi alterado.")
+PY
+
 # 3. xFormers (wheels cu121)
 RUN pip install --no-cache-dir xformers --index-url https://download.pytorch.org/whl/cu121
 
