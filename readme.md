@@ -1,61 +1,157 @@
-# Sora-IA-Proxmox 🎬🚀  
-Deploy do Open-Sora (Text2Video / Text2Image) em VM Proxmox com GPU via Docker
+# Sora-IA-Proxmox
 
-Este repositório entrega um **ambiente pronto em Docker** para rodar o [Open-Sora](https://github.com/hpcaitech/Open-Sora) dentro de uma **VM no Proxmox com GPU passthrough**, expondo uma interface **Gradio** na porta `7860`.
+Setup em Docker para rodar o **Open-Sora v1.1** com interface **Gradio** dentro de uma VM Proxmox com GPU passthrough.
 
-A ideia é:  
-> *subir uma VM no Proxmox, passar a GPU pra ela, rodar `docker compose up` e já sair gerando vídeos/imagens com IA estilo Sora.*
-
----
-
-## ✨ Funcionalidades
-
-- 🧠 **Modelo Open-Sora v1.1** (pipeline de Text2Video / geração de imagens)  
-- 🐳 **Container único** com:
-  - CUDA 12.1
-  - PyTorch com suporte a GPU
-  - xFormers, flash-attn (otimizações de atenção)
-  - Rotary Embeddings e dependências do Open-Sora
-- 🖥️ **UI em Gradio** acessível via navegador (`http://IP_DA_VM:7860`)
-- 💾 **Persistência**:
-  - Cache do Hugging Face em volume (`hf_cache`)
-  - Saída de vídeos / imagens em `./outputs` no host
-- 🔧 Vários pequenos **patches de compatibilidade** já aplicados (T5, AV/FFmpeg, etc.) para evitar os erros mais chatos em ambiente real.
+> ⚠️ **Aviso importante sobre qualidade dos resultados**
+>
+> Este projeto é **experimental**. Nos testes feitos, a qualidade dos vídeos/imagens gerados ficou **bem abaixo** do Sora original mostrado em demos oficiais (artefatos, baixa nitidez, movimentos estranhos etc.).  
+> Use apenas para **estudos, testes e curiosidade**, não espere resultados profissionais.
+> Valide por sé mesmo os resultados em /output gerados na data 09/12/2025
 
 ---
 
-## 🧱 Arquitetura do Projeto
+## 📁 Estrutura do projeto
 
-- **Proxmox** como hypervisor
-- **VM Linux** (ex.: Ubuntu 22.04) com:
-  - GPU NVIDIA em *passthrough*
-  - Drivers NVIDIA instalados
-  - Docker + NVIDIA Container Toolkit configurados
-- Dentro da VM:
-  - `Dockerfile` monta a imagem com CUDA + PyTorch + Open-Sora
-  - `docker-compose.yml` sobe o serviço `sora-gradio` usando a GPU
+- `Dockerfile`  
+  Imagem baseada em **CUDA 12.1 + Ubuntu 22.04**, com:
+  - PyTorch + CUDA
+  - xFormers
+  - Open-Sora v1.1
+  - Gradio
+  - Ajustes de memória para não estourar VRAM/RAM
+  - Correções para:
+    - Erros de device (CPU x GPU) no T5
+    - Problemas com gravação de vídeo (`torchvision` + `av`)
+
+- `docker-compose.yml`  
+  Sobe o serviço `app-sora` (container `sora-gradio`), expondo a porta **7860** e montando:
+  - Cache do Hugging Face
+  - Pasta de `outputs` dos vídeos/imagens gerados
 
 ---
 
-## ✅ Requisitos
+## 🧱 Requisitos
 
-### No host (Proxmox)
+Na **VM Proxmox** onde o container será executado:
 
-- Proxmox 7/8 com:
-  - IOMMU habilitado
-  - GPU NVIDIA configurada em passthrough para a VM
-- GPU recomendada:
-  - **Mínimo:** 16 GB VRAM  
-  - **Ideal:** 24 GB VRAM (ex.: 3090 / 4090 / similares)
+- GPU NVIDIA com suporte a CUDA (e drivers instalados no host)
+- GPU passada para a VM (passthrough / virtio-gpu + nvidia, conforme seu setup)
+- Docker e Docker Compose instalados
+- Pelo menos:
+  - **24 GB RAM** (mais é melhor)
+  - **20+ GB VRAM** recomendados para conseguir rodar os modelos com menos dor de cabeça
 
-### Na VM
+---
 
-- Linux (recomendado: Ubuntu 22.04)
-- Docker + Docker Compose plugin
-- NVIDIA drivers + NVIDIA Container Toolkit funcionando
+## 🚀 Como usar
 
-Teste rápido dentro da VM:
+1. **Clonar o repositório**
 
-```bash
-nvidia-smi
-docker run --rm --gpus all nvidia/cuda:12.1.0-base-ubuntu22.04 nvidia-smi
+   ```bash
+   git clone https://github.com/JohnHeberty/Sora-IA-Proxmox.git
+   cd Sora-IA-Proxmox
+   ````
+
+2. **Ajustar parâmetros (se quiser)**
+
+   * Verifique e edite o `docker-compose.yml` se precisar mudar:
+
+     * Porta padrão (`7860:7860`)
+     * Limite de memória
+     * Volumes de saída (`./outputs`)
+   * Verifique também o `Dockerfile` caso queira:
+
+     * Fixar outras versões de PyTorch/transformers
+     * Mudar configs de memória (`PYTORCH_CUDA_ALLOC_CONF`, `MAX_JOBS`, etc.)
+
+3. **Build da imagem**
+
+   ```bash
+   docker compose build
+   ```
+
+4. **Subir o container**
+
+   ```bash
+   docker compose up -d
+   ```
+
+5. **Acessar a interface**
+
+   No navegador, acesse:
+
+   ```text
+   http://IP_DA_VM:7860
+   ```
+
+   * Use os modos disponíveis na interface (Text2Video / Text2Image, etc.)
+   * Os arquivos gerados serão salvos na pasta `./outputs` do host (mapeada pelo compose).
+
+---
+
+## ⚙️ Notas técnicas
+
+* O `entrypoint.sh` dentro do container:
+
+  * Aplica patches no `app.py` do Gradio/Open-Sora (por exemplo, ajustes de device para o T5).
+  * Inicia o servidor Gradio já pronto em `0.0.0.0:7860`.
+
+* Foram aplicados ajustes para:
+
+  * Evitar alguns erros de **CUDA out of memory**.
+  * Reduzir paralelismo de compilação (`MAX_JOBS=1`, `NINJA_NUM_JOBS=1`).
+  * Tratar erros de gravação com a lib `av`/`torchvision`.
+
+---
+
+## ⚠️ Limitações e problemas conhecidos
+
+* **Qualidade dos vídeos/imagens**
+
+  * Muito inferior às demos oficiais do Sora.
+  * Podem aparecer:
+
+    * Frames tremidos
+    * Artefatos visuais
+    * Cores e formas estranhas
+    * Falta de consistência entre frames
+
+* **Desempenho**
+
+  * Dependente **fortemente** da GPU.
+  * Geração de vídeo é lenta, mesmo com 24GB VRAM.
+  * Alguns prompts podem falhar ou estourar memória dependendo da resolução/duração escolhida.
+
+* **Estabilidade**
+
+  * O projeto usa uma combinação específica de versões (PyTorch, diffusers, transformers, av, etc.).
+  * Atualizações futuras de libs podem quebrar algo.
+  * Este repositório não é oficial do time Open-Sora / Sora, é apenas uma montagem de ambiente.
+
+---
+
+## 🧪 Objetivo do projeto
+
+* Facilitar:
+
+  * Testes do Open-Sora v1.1 dentro de VMs Proxmox com GPU.
+  * Estudos sobre:
+
+    * Arquitetura do modelo
+    * Consumo de recursos
+    * Pipeline Text2Video/Text2Image
+
+* **Não** é focado em:
+
+  * Produção
+  * Qualidade final de vídeo
+  * Uso profissional/comercial
+  * Prompts que não usam caracteristica de "realismo"
+
+---
+
+## 📌 Aviso final
+
+> Use por sua conta e risco.
+> Este repositório é apenas uma **prova de conceito** de ambiente com Docker + Proxmox (já com lib cuda no "docker-compose.yaml") + GPU para rodar Open-Sora.
+> Se quiser resultados realmente impressionantes, considere que o modelo aqui ainda está bem distante do Sora “oficial” mostrado em apresentações.
