@@ -1,0 +1,41 @@
+services:
+  app-sora:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sora-gradio
+    restart: unless-stopped
+    mem_limit: 27g
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+    shm_size: '16gb'
+
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+      - ./outputs:/app/Open-Sora/outputs
+      - /usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1:/usr/lib/x86_64-linux-gnu/libnvidia-ml.so.1:ro
+      - /usr/lib/x86_64-linux-gnu/libcuda.so.1:/usr/lib/x86_64-linux-gnu/libcuda.so.1:ro
+
+    ports:
+      - "7860:7860"
+
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - GRADIO_SERVER_NAME=0.0.0.0
+      - PYTHONPATH=/app/Open-Sora
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,max_split_size_mb:128
+      - MAX_JOBS=1
+      - NINJA_NUM_JOBS=1
+
+    #command: python gradio/app.py --model-type v1.1-stage3 --host 0.0.0.0 --port 7860
+    command: /app/entrypoint.sh  # <- usa o script que faz a cirurgia
+
+volumes:
+  hf_cache:
